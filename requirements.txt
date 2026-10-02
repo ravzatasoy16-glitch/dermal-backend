@@ -5,5 +5,5 @@ supabase
 pillow
 torch
 torchvision
-google-generativeai
+google-genai
 python-multipart
