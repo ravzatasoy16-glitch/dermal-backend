@@ -42,21 +42,25 @@ HASTALIK_ISIMLERI = [
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "cilt_veriseti_7_sinif_model.pth")
 
-# --- MODELİ YÜKLEME (ResNet50) ---
+# --- MODELİ YÜKLEME (MobileNetV2 Olarak Güncellendi) ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def load_model():
     if not os.path.exists(MODEL_PATH):
         raise RuntimeError(f"KRİTİK HATA: Model dosyası bulunamadı -> {MODEL_PATH}")
 
-    model = models.resnet50(weights=None)
-    num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, len(HASTALIK_ISIMLERI))
+    # 1. MobileNetV2 iskeletini çağırıyoruz
+    model = models.mobilenet_v2(weights=None)
     
+    # 2. Sınıflandırıcı (classifier) katmanını 7 sınıfa göre uyarlıyoruz
+    num_ftrs = model.classifier[1].in_features
+    model.classifier[1] = nn.Linear(num_ftrs, len(HASTALIK_ISIMLERI))
+    
+    # 3. Eğittiğimiz ağırlıkları (.pth) modele yüklüyoruz
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
     model.to(DEVICE)
     model.eval()
-    print("Model başarıyla yüklendi ve cihazda aktif:", DEVICE)
+    print("MobileNetV2 Modeli başarıyla yüklendi ve cihazda aktif:", DEVICE)
     return model
 
 model = load_model()
