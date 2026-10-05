@@ -79,7 +79,6 @@ class DegerlendirmeRequest(BaseModel):
 @app.post("/on-degerlendirme-json")
 async def on_degerlendirme_json(req: DegerlendirmeRequest):
     try:
-        # BOŞ FOTOĞRAF KALKANI
         if not req.foto1_base64:
             raise HTTPException(status_code=400, detail="Fotoğraf verisi alınamadı, lütfen tekrar deneyin.")
 
@@ -120,45 +119,45 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
 
         en_yuksek_idx = top_catid[0].item()
         en_yuksek_sinif_adi = HASTALIK_ISIMLERI[en_yuksek_idx]
-        en_yuksek_gercek_isim = turkce_isimler.get(en_yuksek_sinif_adi, en_yuksek_sinif_adi)
 
-        # HASTALIK MANTIĞI KONTROLÜ
+        # 1. DURUM: SINIF "DİĞER" ÇIKARSA
         if en_yuksek_sinif_adi == "diger":
             ai_raporu = (
                 "Bu görsel ana hastalık sınıflarımızla eşleşmemiş ve diğer grup kategorisine aittir. "
                 "Bu yüzden yapay zeka raporu sunulamamaktadır."
             )
+
+        # 2. DURUM: SINIF "MELANOM" ÇIKARSA
         elif en_yuksek_sinif_adi == "melanoma":
             ai_raporu = (
                 "Sonucumuz melanom şüphesi taşımaktadır. "
                 "Bir dermatoloji uzman doktoru tarafından yüz yüze görülmesi tavsiye edilir."
             )
+
+        # 3. DURUM: DİĞER HASTALIKLAR (Gemini)
         else:
             prompt = f"""
-            Sen uzman bir klinik dermatoloji asistanısın. Amacın, hastanın şikayetleri ve yapay zeka modelimizin ön tanısına dayanarak dinamik, hastaya ve hastalığına ÖZEL bir klinik ön değerlendirme oluşturmaktır.
+            Sen uzman bir klinik dermatoloji asistanısın. Amacın, hastanın şikayetlerine ve yapay zeka modelimizin sunduğu ilk 3 yüzdelik tahmin oranına dayanarak hastaya özel, profesyonel ve özgün bir klinik ön değerlendirme raporu oluşturmaktır.
 
             HASTA BİLGİLERİ:
             - Şikayet Bölgesi: "{req.bolge}"
-            - Süresi: "{req.sure}"
+            - Şikayet Süresi: "{req.sure}"
             - Şikayet Detayı: "{req.sikayet_detayi}"
             - Aile Öyküsü: "{req.aile_oykusu}"
-            - Yapay Zeka Ön Tanısı: {en_yuksek_gercek_isim}
 
-            KESİN KURALLAR:
-            1. Asla standart kalıp cümleler kullanma! Raporu doğrudan hastanın GÜNCEL ŞİKAYETİNE ve MODELİN ÖN TANISINA ({en_yuksek_gercek_isim}) göre özel olarak üret.
-            2. Hastalığın doğasına uygun MANTIKLI öneriler ver. Örneğin; model ön tanısı "İyi Huylu Ben" ise kesinlikle sabunla yıkama, krem sürme gibi saçma önerilerde bulunma, sadece "fiziksel müdahaleden kaçınılması ve büyümesinin takip edilmesi" gibi uygun öneriler sun. Ön tanı "Akne" veya "Egzama" ise ona uygun bakım önerileri ver.
-            3. Başlık, etiket, numara veya madde imi kullanma. Doğrudan akıcı, düz metin halinde yaz. Yıldız (*) kullanma ve hiçbir kelimeyi kalınlaştırma.
-            4. Yazının sonunda mutlaka bunun bir yapay zeka ön değerlendirmesi olduğunu ve kesin teşhis/tedavi için hekim onayı gerektiğini profesyonelce vurgula.
+            YAPAY ZEKA MODELİ TAHMİN ORANLARI:
+            {yan_yana_tahminler}
+
+            TALİMATLAR:
+            - Görseli, hastanın şikayetlerini ve modelin yukarıdaki yüzdelik oranlarını birlikte harmanla.
+            - Hastanın durumuna (akne, egzama, mantar vb.) özgü mantıklı bakım, çevresel faktörler (güneş, temas, kıyafet seçimi vb.) ve kaçınılması gereken durumlar hakkında özgün öneriler sun.
+            - Metnin sonunda mutlaka bunun bir yapay zeka ön analizi olduğunu ve kesin teşhis/tedavi için hekim onayı gerektiğini profesyonelce vurgula.
             """
 
             try:
                 response = client.models.generate_content(
                     model='gemini-1.5-flash',
-                    contents=[prompt, image],
-                    config=genai.types.GenerateContentConfig(
-                        temperature=0.7,
-                        max_output_tokens=800,
-                    )
+                    contents=[prompt, image]
                 )
                 ai_raporu = response.text.strip()
             except Exception as gemini_hata:
@@ -196,7 +195,6 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             except Exception as e:
                 print("Foto3 Storage Yükleme Hatası:", e)
 
-        # SUPABASE TARİH FORMATI DÜZELTMESİ (timestamptz uyumlu)
         guncel_tarih_saat = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         kayit_verisi = {
