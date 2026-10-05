@@ -24,39 +24,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- GEMINI İSTEMCİSİ (Çevresel Değişkenden Alınır) ---
+# --- GEMINI İSTEMCİSİ ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# --- SUPABASE BAĞLANTISI (Çevresel Değişkenlerden Alınır) ---
+# --- SUPABASE BAĞLANTISI ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- SINIF SIRASI (7 Sınıf - Alfabetik Sıraya Göre) ---
+# --- SINIF SIRASI ---
 HASTALIK_ISIMLERI = [
     "acne", "benign_nv", "diger", "eczema", "melanoma", "psoriasis", "tinea"
 ]
 
-# --- DOSYA YOLU ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "cilt_veriseti_7_sinif_model.pth")
-
-# --- MODELİ YÜKLEME (MobileNetV2 Olarak Güncellendi) ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def load_model():
     if not os.path.exists(MODEL_PATH):
         raise RuntimeError(f"KRİTİK HATA: Model dosyası bulunamadı -> {MODEL_PATH}")
 
-    # 1. MobileNetV2 iskeletini çağırıyoruz
     model = models.mobilenet_v2(weights=None)
-    
-    # 2. Sınıflandırıcı (classifier) katmanını 7 sınıfa göre uyarlıyoruz
     num_ftrs = model.classifier[1].in_features
     model.classifier[1] = nn.Linear(num_ftrs, len(HASTALIK_ISIMLERI))
     
-    # 3. Eğittiğimiz ağırlıkları (.pth) modele yüklüyoruz
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
     model.to(DEVICE)
     model.eval()
@@ -65,7 +58,6 @@ def load_model():
 
 model = load_model()
 
-# --- TRANSFORMS ---
 transform = transforms.Compose([
     transforms.Resize(256),
     transforms.CenterCrop(224),
@@ -73,7 +65,6 @@ transform = transforms.Compose([
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ])
 
-# --- TELEFONDAN GELECEK JSON VERİSİ İÇİN YAPI ---
 class DegerlendirmeRequest(BaseModel):
     tc_no: str
     sikayet_detayi: str
@@ -85,10 +76,13 @@ class DegerlendirmeRequest(BaseModel):
     foto2_base64: Optional[str] = None
     foto3_base64: Optional[str] = None
 
-# --- ENDPOINT ---
 @app.post("/on-degerlendirme-json")
 async def on_degerlendirme_json(req: DegerlendirmeRequest):
     try:
+        # BOŞ FOTOĞRAF KALKANI
+        if not req.foto1_base64:
+            raise HTTPException(status_code=400, detail="Fotoğraf verisi alınamadı, lütfen tekrar deneyin.")
+
         def decode_b64(b64_str):
             if not b64_str: return None
             if "," in b64_str:
@@ -120,7 +114,7 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             conf = round(top_prob[i].item() * 100, 2)
             name = HASTALIK_ISIMLERI[idx]
             gercek_isim = turkce_isimler.get(name, name)
-            top_3_listesi.append(f"{gercek_isim} (%{conf})")
+            top_3_listesi.append(f"{gercek_isim} (Model Güven Skoru: %{conf})")
 
         yan_yana_tahminler = ", ".join(top_3_listesi)
 
@@ -128,50 +122,51 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
         en_yuksek_sinif_adi = HASTALIK_ISIMLERI[en_yuksek_idx]
         en_yuksek_gercek_isim = turkce_isimler.get(en_yuksek_sinif_adi, en_yuksek_sinif_adi)
 
+        # HASTALIK MANTIĞI KONTROLÜ
         if en_yuksek_sinif_adi == "diger":
             ai_raporu = (
-                "Bu lezyon sistemin tanımlı ana hastalık sınıfları ile eşleşmemiştir; diğer sınıf kategorisinde yer almaktadır. "
-                "Yapay zeka bu aşamada klinik bir ön değerlendirme veya tedavi önerisi oluşturamamaktadır. "
-                "Uzman hekimin detaylı fiziki muayenesi ve değerlendirmesi önerilir."
+                "Bu görsel ana hastalık sınıflarımızla eşleşmemiş ve diğer grup kategorisine aittir. "
+                "Bu yüzden yapay zeka raporu sunulamamaktadır."
+            )
+        elif en_yuksek_sinif_adi == "melanoma":
+            ai_raporu = (
+                "Sonucumuz melanom şüphesi taşımaktadır. "
+                "Bir dermatoloji uzman doktoru tarafından yüz yüze görülmesi tavsiye edilir."
             )
         else:
             prompt = f"""
-            Sen profesyonel bir dermatoloji asistanısın. Yazacağın rapor kurumsal bir hastane raporu ciddiyetinde ve formatında olmalıdır.
+            Sen uzman bir klinik dermatoloji asistanısın. Amacın, hastanın şikayetleri ve yapay zeka modelimizin ön tanısına dayanarak dinamik, hastaya ve hastalığına ÖZEL bir klinik ön değerlendirme oluşturmaktır.
 
             HASTA BİLGİLERİ:
-            - Şikayet: "{req.sikayet_detayi}"
-            - Bölge: "{req.bolge}"
-            - Süre: "{req.sure}"
+            - Şikayet Bölgesi: "{req.bolge}"
+            - Süresi: "{req.sure}"
+            - Şikayet Detayı: "{req.sikayet_detayi}"
             - Aile Öyküsü: "{req.aile_oykusu}"
-            
-            YAPAY ZEKA MODEL TAHMİNLERİ: {yan_yana_tahminler}
-            
-            KATI KURALLAR:
-            1. KESİNLİKLE 1., 2., 3. gibi numaralı başlıklar veya madde imleri KULLANMA. Rapor alt alta inen 3 düz paragraftan oluşmalıdır.
-            2. KESİNLİKLE tıbbi jargon (intravenöz, eritematöz vb.) ve "İşbu rapor" gibi eski/resmi kelimeler kullanma.
-            3. Metin içinde hiçbir kelimeyi kalınlaştırma (bold yapma) ve yıldız (*) işareti kullanma.
-            4. Yüzdelik oranları KESİNLİKLE yazıyla (örn: yüzde seksen beş) YAZMA! Kesinlikle matematiksel formatta (% sembolü ve rakam ile, örn: %85.3) yaz.
-            
-            RAPOR İSKELETİ (Sadece aşağıdaki 3 paragrafı yaz):
-            [Paragraf 1 - Klinik Sentez]: Hastanın şikayet bölgesi, süresi, aile öyküsü ile görsel model analiz sonuçlarını (% sembolü kullanarak) harmanlayarak mantıklı bir bütünlüğe kavuştur.
-            [Paragraf 2 - Yaşam Tarzı ve Ürün Tavsiyeleri]: Çıkan en yüksek ihtimalli rahatsızlığa (%100 özgü) tavsiyeler ver. Gerçekten o hastalığa iyi gelecek veya uzak durulması gereken spesifik öneriler yaz. 
-            [Paragraf 3 - Yasal Uyarı]: ! Bu raporun bir yapay zeka klinik karar destek sistemi ön değerlendirmesi olduğu ve kesin tanı niteliği taşımadığı, nihai kararın fiziki muayene ile uzman hekime ait olduğunu belirten modern bir uyarı cümlesi yaz ve cümlenin sonuna da ünlem koy !
+            - Yapay Zeka Ön Tanısı: {en_yuksek_gercek_isim}
+
+            KESİN KURALLAR:
+            1. Asla standart kalıp cümleler kullanma! Raporu doğrudan hastanın GÜNCEL ŞİKAYETİNE ve MODELİN ÖN TANISINA ({en_yuksek_gercek_isim}) göre özel olarak üret.
+            2. Hastalığın doğasına uygun MANTIKLI öneriler ver. Örneğin; model ön tanısı "İyi Huylu Ben" ise kesinlikle sabunla yıkama, krem sürme gibi saçma önerilerde bulunma, sadece "fiziksel müdahaleden kaçınılması ve büyümesinin takip edilmesi" gibi uygun öneriler sun. Ön tanı "Akne" veya "Egzama" ise ona uygun bakım önerileri ver.
+            3. Başlık, etiket, numara veya madde imi kullanma. Doğrudan akıcı, düz metin halinde yaz. Yıldız (*) kullanma ve hiçbir kelimeyi kalınlaştırma.
+            4. Yazının sonunda mutlaka bunun bir yapay zeka ön değerlendirmesi olduğunu ve kesin teşhis/tedavi için hekim onayı gerektiğini profesyonelce vurgula.
             """
 
             try:
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt,
+                    model='gemini-1.5-flash',
+                    contents=[prompt, image],
+                    config=genai.types.GenerateContentConfig(
+                        temperature=0.7,
+                        max_output_tokens=800,
+                    )
                 )
                 ai_raporu = response.text.strip()
             except Exception as gemini_hata:
-                print("Gemini API Hatası (Yedek Rapor Devrede):", gemini_hata)
-                
-                ai_raporu = f"""Hastanın "{req.bolge}" bölgesinde "{req.sure}" süredir devam eden "{req.sikayet_detayi}" şikayeti ve iletilen görsel veriler yapay zeka altyapımız ile değerlendirilmiştir. Görüntü analizi sonucunda yapay zeka modelinin tespit ettiği bulgular sırasıyla şöyledir: {yan_yana_tahminler}. Aile öyküsü ({req.aile_oykusu}) bu doğrultuda klinik tabloya eklenmiştir.
-
-Çıkan en yüksek ihtimalli ({en_yuksek_gercek_isim}) ön bulgusuna yönelik olarak; şikayet bölgesinin hijyenine dikkat edilmesi, irritan maddelerden kaçınılması ve cilt bariyerini destekleyici dermokozmetik yaklaşımlar tercih edilmesi önerilmektedir. Spesifik lezyon yönetimi hastanın güncel durumuna göre planlanmalıdır.
-
-! Bu raporun bir yapay zeka klinik karar destek sistemi ön değerlendirmesi olduğu ve kesin tanı niteliği taşımadığı, nihai kararın fiziki muayene ile uzman hekime ait olduğu unutulmamalıdır !"""
+                print("Gemini API Hatası:", gemini_hata)
+                ai_raporu = (
+                    "Bağlantı kurulamadı veya sunucu yanıt vermedi. "
+                    "Lütfen sayfanızı yenileyiniz ve tekrar deneyiniz."
+                )
 
         timestamp = int(time.time())
         foto1_url, foto2_url, foto3_url = None, None, None
@@ -201,7 +196,8 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             except Exception as e:
                 print("Foto3 Storage Yükleme Hatası:", e)
 
-        guncel_tarih_saat = datetime.now().strftime("%m-%d-%Y %H:%M:%S")
+        # SUPABASE TARİH FORMATI DÜZELTMESİ (timestamptz uyumlu)
+        guncel_tarih_saat = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         kayit_verisi = {
             "tc_no": req.tc_no,
@@ -222,7 +218,7 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
         return {
             "status": "success",
             "supabase_kayit_durumu": "Başarıyla kaydedildi"
-        }
+        }   
 
     except Exception as e:            
         raise HTTPException(status_code=500, detail=str(e))
