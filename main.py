@@ -131,9 +131,6 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
                 "Bir dermatoloji uzman doktoru tarafından yüz yüze görülmesi tavsiye edilir."
             )
         else:
-            # ------------------------------------------------------------------
-            # SENİN İSTEDİĞİN SADE, 3 PARAGRAFLIK KATI RAPOR KURALLARI
-            # ------------------------------------------------------------------
             prompt = f"""
             Sen hastalarla anlaşılır ve sade bir dille iletişim kuran bir sağlık asistanısın. 
             Amacın, hastanın şikayetlerine ve yapay zeka modelimizin sunduğu ilk 3 yüzdelik tahmin oranına dayanarak hastaya özel, anlaşılır bir ön değerlendirme raporu oluşturmaktır.
@@ -151,9 +148,10 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             1. HİÇBİR ŞEKİLDE markdown formatı KULLANMA! (Başlıklar için # işareti, kalın yazmak için ** işareti, listeler için - veya * işareti kesinlikle KULLANILMAYACAK).
             2. Ağır tıbbi terimlerden (eritem, deskuamasyon, lezyon, fissür vb.) tamamen uzak dur, halkın anlayacağı son derece sade, günlük ve düz bir Türkçe kullan.
             3. Metni sadece 3 adet düz paragraf şeklinde yaz. Asla alt başlık veya maddeleme yapma.
-            4. İlk paragrafta hastanın şikayetini ve yapay zekanın bulgularını doğal bir metin halinde harmanlayarak özetle.
-            5. İkinci paragrafta cildi rahatlatacak günlük bakım önerileri, çevresel faktörler ve kaçınılması gerekenleri düz metin olarak anlat.
-            6. Üçüncü (son) paragrafta ise "Bu rapor bir yapay zeka klinik karar destek sistemi tarafından üretilmiş ön değerlendirme metni olup kesin tanı niteliği taşımamaktadır ve nihai tanı ile tedavi planı ancak uzman bir tabip tarafından yapılacak detaylı fiziki muayene sonucunda netleşecektir!" cümlesini kullanarak metni bitir.
+            4. Yüzdelik oranları metin içinde KESİNLİKLE yazıyla (örneğin "yüzde yetmiş iki") YAZMA! Oranları daima rakam ve % sembolü ile (örneğin "%72.5") belirt.
+            5. İlk paragrafta hastanın şikayetini ve yapay zekanın bulgularını doğal bir metin halinde harmanlayarak özetle.
+            6. İkinci paragrafta cildi rahatlatacak günlük bakım önerileri, çevresel faktörler ve kaçınılması gerekenleri düz metin olarak anlat.
+            7. Üçüncü (son) paragrafta ise "Bu rapor bir yapay zeka klinik karar destek sistemi tarafından üretilmiş ön değerlendirme metni olup kesin tanı niteliği taşımamaktadır ve nihai tanı ile tedavi planı ancak uzman bir tabip tarafından yapılacak detaylı fiziki muayene sonucunda netleşecektir!" cümlesini kullanarak metni bitir.
             """
 
             # ========================================================
@@ -161,7 +159,7 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             # ========================================================
             ai_raporu = ""
             basarili_oldu = False
-            # En çok kullanılanlardan oluşan sarsılmaz yedekleme listesi
+            # En güncel modeller ve yedekleri
             denenecek_modeller = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview']
 
             for model_adi in denenecek_modeller:
