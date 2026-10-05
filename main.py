@@ -131,6 +131,9 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
                 "Bir dermatoloji uzman doktoru tarafından yüz yüze görülmesi tavsiye edilir."
             )
         else:
+            # ------------------------------------------------------------------
+            # SENİN İSTEDİĞİN SADE, 3 PARAGRAFLIK KATI RAPOR KURALLARI
+            # ------------------------------------------------------------------
             prompt = f"""
             Sen hastalarla anlaşılır ve sade bir dille iletişim kuran bir sağlık asistanısın. 
             Amacın, hastanın şikayetlerine ve yapay zeka modelimizin sunduğu ilk 3 yüzdelik tahmin oranına dayanarak hastaya özel, anlaşılır bir ön değerlendirme raporu oluşturmaktır.
@@ -154,11 +157,12 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             """
 
             # ========================================================
-            # HATA AFFETMEYEN ÖLÜMSÜZ MİMARİ (ŞELALE + İNATÇI TEKRAR)
+            # SENİN FİKRİN OLAN KARMA NESİL ŞELALE MİMARİSİ
             # ========================================================
             ai_raporu = ""
             basarili_oldu = False
-            denenecek_modeller = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro']
+            # En çok kullanılanlardan oluşan sarsılmaz yedekleme listesi
+            denenecek_modeller = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']
 
             for model_adi in denenecek_modeller:
                 if basarili_oldu:
