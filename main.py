@@ -131,7 +131,7 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
                 "Bir dermatoloji uzman doktoru tarafından yüz yüze görülmesi tavsiye edilir."
             )
         else:
-           prompt = f"""
+            prompt = f"""
             Sen hastalarla anlaşılır ve sade bir dille iletişim kuran bir sağlık asistanısın. 
             Amacın, hastanın şikayetlerine ve yapay zeka modelimizin sunduğu ilk 3 yüzdelik tahmin oranına dayanarak hastaya özel, anlaşılır bir ön değerlendirme raporu oluşturmaktır.
 
@@ -152,22 +152,44 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             5. İkinci paragrafta cildi rahatlatacak günlük bakım önerileri, çevresel faktörler ve kaçınılması gerekenleri düz metin olarak anlat.
             6. Üçüncü (son) paragrafta ise "Bu rapor bir yapay zeka klinik karar destek sistemi tarafından üretilmiş ön değerlendirme metni olup kesin tanı niteliği taşımamaktadır ve nihai tanı ile tedavi planı ancak uzman bir tabip tarafından yapılacak detaylı fiziki muayene sonucunda netleşecektir!" cümlesini kullanarak metni bitir.
             """
-           
-        try:
-                # 404 hatasını aşmak için model güncellendi (Tedavi)
-                response = client.models.generate_content(
-                    model='gemini-3.8-flash',
-                    contents=[prompt, image]
-                )
-                ai_raporu = response.text.strip()
-        except Exception as gemini_hata:
-                print("Gemini API Hatası Yakalandı (Sistem Çökmesi Engellendi):", gemini_hata)
-                # Olası bir aksilikte sistemi kurtaran profesyonel kalkan (Savunma)
-                ai_raporu = (
-                    "Yapay zeka analiz merkezimizde anlık bir yoğunluk yaşanmaktadır. "
-                    "Şikayetiniz, verileriniz ve klinik görselleriniz uzman doktorunuzun sistemine başarıyla iletilmiştir. "
-                    "Lütfen kesin teşhis ve tedavi planı için doktorunuzun değerlendirmesini bekleyiniz."
-                )
+
+            # ========================================================
+            # HATA AFFETMEYEN ÖLÜMSÜZ MİMARİ (ŞELALE + İNATÇI TEKRAR)
+            # ========================================================
+            ai_raporu = ""
+            basarili_oldu = False
+            denenecek_modeller = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro']
+
+            for model_adi in denenecek_modeller:
+                if basarili_oldu:
+                    break
+                    
+                print(f"\n[SİSTEM] {model_adi} modeline bağlanılıyor...")
+                
+                for deneme in range(3): # Her model için 3 kez inatla saldır
+                    try:
+                        response = client.models.generate_content(
+                            model=model_adi,
+                            contents=[prompt, image]
+                        )
+                        ai_raporu = response.text.strip()
+                        basarili_oldu = True
+                        print(f"[BAŞARILI] Rapor {model_adi} modelinden söküp alındı!")
+                        break # Raporu aldık, döngüleri kır ve çık
+                        
+                    except Exception as e:
+                        print(f"[HATA] {model_adi} (Deneme {deneme+1}/3) başarısız oldu. Sebep: {str(e)}")
+                        
+                        if deneme < 2:
+                            bekleme_suresi = (deneme + 1) * 2 # 2 sn, sonra 4 sn bekleyecek
+                            print(f"[SİSTEM] Google direniyor, {bekleme_suresi} saniye bekleyip tekrar zorlanıyor...")
+                            time.sleep(bekleme_suresi)
+                        else:
+                            print(f"[UYARI] {model_adi} tamamen tıkandı! Şelale sistemine göre yedek modele geçiliyor...")
+            
+            # Eğer kıyamet kopar da Google'ın TÜM sunucuları çökerse devreye girecek son kalkan
+            if not basarili_oldu or not ai_raporu:
+                ai_raporu = "Yapay zeka analiz merkezimizde geçici bir bağlantı yoğunluğu yaşanmaktadır. Şikayetiniz ve görselleriniz uzman doktorunuzun sistemine başarıyla iletilmiştir. Lütfen değerlendirme sonucunu bekleyiniz."
 
         timestamp = int(time.time())
         foto1_url, foto2_url, foto3_url = None, None, None
