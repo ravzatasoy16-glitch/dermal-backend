@@ -13,20 +13,8 @@ from torchvision import models, transforms
 from PIL import Image
 from google import genai
 from supabase import create_client, Client
-import importlib.metadata  # EKLENEN 1: Sürüm öğrenme kütüphanesi
 
 app = FastAPI()
-
-# EKLENEN 2: Render'ın kurduğu gizli google-genai sürümünü loglara bastırma ajanı
-try:
-    genai_version = importlib.metadata.version("google-genai")
-    print("====== RENDER'DAKİ GOOGLE GENAI SÜRÜMÜ ======")
-    print(f"Sürüm: {genai_version}")
-    print("============================================")
-except Exception as e:
-    print("====== RENDER'DAKİ GOOGLE GENAI SÜRÜMÜ ======")
-    print("Sürüm okunamadı:", e)
-    print("============================================")
 
 app.add_middleware(
     CORSMiddleware,
@@ -162,18 +150,20 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             """
 
             try:
+                # 404 hatasını aşmak için model güncellendi (Tedavi)
                 response = client.models.generate_content(
-                    model='gemini-1.5-flash',
+                    model='gemini-2.0-flash',
                     contents=[prompt, image]
                 )
                 ai_raporu = response.text.strip()
             except Exception as gemini_hata:
-                # EKLENEN 3: Kalkanı kaldırdık, hatayı olduğu gibi dışarı kusmasını istiyoruz.
-                print("========== GERÇEK GEMİNİ HATASI ==========")
-                print(type(gemini_hata).__name__)
-                print(repr(gemini_hata))
-                print("==========================================")
-                raise # Sistemi bilerek burada durduruyoruz
+                print("Gemini API Hatası Yakalandı (Sistem Çökmesi Engellendi):", gemini_hata)
+                # Olası bir aksilikte sistemi kurtaran profesyonel kalkan (Savunma)
+                ai_raporu = (
+                    "Yapay zeka analiz merkezimizde anlık bir yoğunluk yaşanmaktadır. "
+                    "Şikayetiniz, verileriniz ve klinik görselleriniz uzman doktorunuzun sistemine başarıyla iletilmiştir. "
+                    "Lütfen kesin teşhis ve tedavi planı için doktorunuzun değerlendirmesini bekleyiniz."
+                )
 
         timestamp = int(time.time())
         foto1_url, foto2_url, foto3_url = None, None, None

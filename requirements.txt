@@ -6,5 +6,5 @@ supabase
 pillow
 torch
 torchvision
-google-genai
+google-genai==2.28.0
 python-multipart
