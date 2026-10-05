@@ -152,7 +152,7 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             try:
                 # 404 hatasını aşmak için model güncellendi (Tedavi)
                 response = client.models.generate_content(
-                    model='gemini-2.0-flash',
+                    model='gemini-3.8-flash',
                     contents=[prompt, image]
                 )
                 ai_raporu = response.text.strip()
