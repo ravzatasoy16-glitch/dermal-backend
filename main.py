@@ -162,7 +162,7 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             ai_raporu = ""
             basarili_oldu = False
             # En çok kullanılanlardan oluşan sarsılmaz yedekleme listesi
-            denenecek_modeller = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']
+            denenecek_modeller = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview']
 
             for model_adi in denenecek_modeller:
                 if basarili_oldu:
