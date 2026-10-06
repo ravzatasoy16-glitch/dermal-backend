@@ -2,7 +2,7 @@ import os
 import io
 import time 
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +13,11 @@ from torchvision import models, transforms
 from PIL import Image
 from google import genai
 from supabase import create_client, Client
+
+# --- KESİN VE KALICI .ENV ÇÖZÜMÜ ---
+from dotenv import load_dotenv
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 app = FastAPI()
 
@@ -38,7 +43,6 @@ HASTALIK_ISIMLERI = [
     "acne", "benign_nv", "diger", "eczema", "melanoma", "psoriasis", "tinea"
 ]
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "cilt_veriseti_7_sinif_model.pth")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -159,7 +163,6 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             # ========================================================
             ai_raporu = ""
             basarili_oldu = False
-            # En güncel modeller ve yedekleri
             denenecek_modeller = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview']
 
             for model_adi in denenecek_modeller:
@@ -168,7 +171,7 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
                     
                 print(f"\n[SİSTEM] {model_adi} modeline bağlanılıyor...")
                 
-                for deneme in range(3): # Her model için 3 kez inatla saldır
+                for deneme in range(3): 
                     try:
                         response = client.models.generate_content(
                             model=model_adi,
@@ -177,19 +180,18 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
                         ai_raporu = response.text.strip()
                         basarili_oldu = True
                         print(f"[BAŞARILI] Rapor {model_adi} modelinden söküp alındı!")
-                        break # Raporu aldık, döngüleri kır ve çık
+                        break 
                         
                     except Exception as e:
                         print(f"[HATA] {model_adi} (Deneme {deneme+1}/3) başarısız oldu. Sebep: {str(e)}")
                         
                         if deneme < 2:
-                            bekleme_suresi = (deneme + 1) * 2 # 2 sn, sonra 4 sn bekleyecek
+                            bekleme_suresi = (deneme + 1) * 2 
                             print(f"[SİSTEM] Google direniyor, {bekleme_suresi} saniye bekleyip tekrar zorlanıyor...")
                             time.sleep(bekleme_suresi)
                         else:
                             print(f"[UYARI] {model_adi} tamamen tıkandı! Şelale sistemine göre yedek modele geçiliyor...")
             
-            # Eğer kıyamet kopar da Google'ın TÜM sunucuları çökerse devreye girecek son kalkan
             if not basarili_oldu or not ai_raporu:
                 ai_raporu = "Yapay zeka analiz merkezimizde geçici bir bağlantı yoğunluğu yaşanmaktadır. Şikayetiniz ve görselleriniz uzman doktorunuzun sistemine başarıyla iletilmiştir. Lütfen değerlendirme sonucunu bekleyiniz."
 
@@ -221,7 +223,8 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             except Exception as e:
                 print("Foto3 Storage Yükleme Hatası:", e)
 
-        guncel_tarih_saat = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # İŞTE SİHİRLİ DOKUNUŞ: Sunucu saatine +3 saat ekliyoruz (Türkiye Saati)
+        guncel_tarih_saat = (datetime.now() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S")
 
         kayit_verisi = {
             "tc_no": req.tc_no,
