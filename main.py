@@ -238,8 +238,8 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest, background_tasks: Bac
         if not req.foto1_base64:
             raise HTTPException(status_code=400, detail="Fotoğraf verisi alınamadı, lütfen tekrar deneyin.")
 
-        # İŞTE SİHİRLİ DOKUNUŞ 1: Tarihi JS'nin kafasını karıştırmayacak TİRELİ formata çevirdik
-        guncel_tarih_saat = (datetime.now() + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+        # İŞTE KESİN SAAT ÇÖZÜMÜ: Zamanı standart UTC'ye göre alıp, +3 saat ekliyor ve JavaScript "Buna bir daha saat ekleme!" desin diye açıkça +03:00 formatında damgalıyoruz.
+        guncel_tarih_saat = (datetime.utcnow() + timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%S+03:00")
 
         # İŞTE SİHİRLİ DOKUNUŞ 2: Veritabanına "Boş" bir kayıt açıyoruz ki hasta anında cevap alsın
         kayit_verisi = {
