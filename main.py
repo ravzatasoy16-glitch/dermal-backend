@@ -4,7 +4,7 @@ import time
 import base64
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import torch
@@ -80,12 +80,11 @@ class DegerlendirmeRequest(BaseModel):
     foto2_base64: Optional[str] = None
     foto3_base64: Optional[str] = None
 
-@app.post("/on-degerlendirme-json")
-async def on_degerlendirme_json(req: DegerlendirmeRequest):
+# ========================================================
+# ARKA PLANDA ÇALIŞACAK DEV FONKSİYON (HASTAYI BEKLETMEYEN KISIM)
+# ========================================================
+def arka_planda_analiz_yap(req: DegerlendirmeRequest, kayit_id: int):
     try:
-        if not req.foto1_base64:
-            raise HTTPException(status_code=400, detail="Fotoğraf verisi alınamadı, lütfen tekrar deneyin.")
-
         def decode_b64(b64_str):
             if not b64_str: return None
             if "," in b64_str:
@@ -120,7 +119,6 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             top_3_listesi.append(f"{gercek_isim} (Model Güven Skoru: %{conf})")
 
         yan_yana_tahminler = ", ".join(top_3_listesi)
-
         en_yuksek_idx = top_catid[0].item()
         en_yuksek_sinif_adi = HASTALIK_ISIMLERI[en_yuksek_idx]
 
@@ -158,17 +156,12 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
             7. Üçüncü (son) paragrafta ise "Bu rapor bir yapay zeka klinik karar destek sistemi tarafından üretilmiş ön değerlendirme metni olup kesin tanı niteliği taşımamaktadır ve nihai tanı ile tedavi planı ancak uzman bir tabip tarafından yapılacak detaylı fiziki muayene sonucunda netleşecektir!" cümlesini kullanarak metni bitir.
             """
 
-            # ========================================================
-            # SENİN FİKRİN OLAN KARMA NESİL ŞELALE MİMARİSİ
-            # ========================================================
             ai_raporu = ""
             basarili_oldu = False
             denenecek_modeller = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview']
 
             for model_adi in denenecek_modeller:
-                if basarili_oldu:
-                    break
-                    
+                if basarili_oldu: break
                 print(f"\n[SİSTEM] {model_adi} modeline bağlanılıyor...")
                 
                 for deneme in range(3): 
@@ -184,17 +177,15 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
                         
                     except Exception as e:
                         print(f"[HATA] {model_adi} (Deneme {deneme+1}/3) başarısız oldu. Sebep: {str(e)}")
-                        
                         if deneme < 2:
-                            bekleme_suresi = (deneme + 1) * 2 
-                            print(f"[SİSTEM] Google direniyor, {bekleme_suresi} saniye bekleyip tekrar zorlanıyor...")
-                            time.sleep(bekleme_suresi)
+                            time.sleep((deneme + 1) * 2)
                         else:
-                            print(f"[UYARI] {model_adi} tamamen tıkandı! Şelale sistemine göre yedek modele geçiliyor...")
+                            print(f"[UYARI] {model_adi} tamamen tıkandı! Yedek modele geçiliyor...")
             
             if not basarili_oldu or not ai_raporu:
-                ai_raporu = "Yapay zeka analiz merkezimizde geçici bir bağlantı yoğunluğu yaşanmaktadır. Şikayetiniz ve görselleriniz uzman doktorunuzun sistemine başarıyla iletilmiştir. Lütfen değerlendirme sonucunu bekleyiniz."
+                ai_raporu = "Yapay zeka analiz merkezimizde geçici bir yoğunluk yaşanmaktadır. Şikayetiniz doktorunuza iletilmiştir."
 
+        # FOTOĞRAFLARI YÜKLEME KISMI
         timestamp = int(time.time())
         foto1_url, foto2_url, foto3_url = None, None, None
 
@@ -211,8 +202,7 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
                 path2 = f"{req.tc_no}_{timestamp}_f2.jpg"
                 supabase.storage.from_("fotograflar").upload(path2, f2_bytes, {"content-type": "image/jpeg"})
                 foto2_url = supabase.storage.from_("fotograflar").get_public_url(path2)
-            except Exception as e:
-                print("Foto2 Storage Yükleme Hatası:", e)
+            except Exception as e: pass
 
         if req.foto3_base64:
             try:
@@ -220,31 +210,59 @@ async def on_degerlendirme_json(req: DegerlendirmeRequest):
                 path3 = f"{req.tc_no}_{timestamp}_f3.jpg"
                 supabase.storage.from_("fotograflar").upload(path3, f3_bytes, {"content-type": "image/jpeg"})
                 foto3_url = supabase.storage.from_("fotograflar").get_public_url(path3)
-            except Exception as e:
-                print("Foto3 Storage Yükleme Hatası:", e)
+            except Exception as e: pass
 
-        # İŞTE SİHİRLİ DOKUNUŞ: Sunucu saatine +3 saat ekliyoruz (Türkiye Saati)
-        guncel_tarih_saat = (datetime.now() + timedelta(hours=3)).strftime("%d.%m.%Y %H:%M:%S")
+        # ARKA PLANDA VERİTABANINI GÜNCELLE
+        guncellenecek_veri = {
+            "ai_on_tani": ai_raporu,
+            "foto1": foto1_url,
+            "foto2": foto2_url,
+            "foto3": foto3_url
+        }
+        supabase.table("analizler").update(guncellenecek_veri).eq("id", kayit_id).execute()
+        print(f"[BAŞARILI] Arka plan işlemi tamamlandı ve veritabanı güncellendi! Kayıt ID: {kayit_id}")
 
+    except Exception as e:
+        print(f"[ARKA PLAN KRİTİK HATA] {str(e)}")
+        try:
+            supabase.table("analizler").update({"ai_on_tani": "Analiz sırasında beklenmeyen bir hata oluştu."}).eq("id", kayit_id).execute()
+        except: pass
+
+
+# ========================================================
+# ANA İSTEK YERİ (HASTAYI BEKLETMEYEN HIZLI YANIT)
+# ========================================================
+@app.post("/on-degerlendirme-json")
+async def on_degerlendirme_json(req: DegerlendirmeRequest, background_tasks: BackgroundTasks):
+    try:
+        if not req.foto1_base64:
+            raise HTTPException(status_code=400, detail="Fotoğraf verisi alınamadı, lütfen tekrar deneyin.")
+
+        # İŞTE SİHİRLİ DOKUNUŞ 1: Tarihi JS'nin kafasını karıştırmayacak TİRELİ formata çevirdik
+        guncel_tarih_saat = (datetime.now() + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+
+        # İŞTE SİHİRLİ DOKUNUŞ 2: Veritabanına "Boş" bir kayıt açıyoruz ki hasta anında cevap alsın
         kayit_verisi = {
             "tc_no": req.tc_no,
             "detay": req.sikayet_detayi,          
             "bolge": req.bolge,
             "sure": req.sure,
             "aile_oykusu": req.aile_oykusu,
-            "ai_on_tani": ai_raporu,
-            "foto1": foto1_url,
-            "foto2": foto2_url,
-            "foto3": foto3_url,
+            "ai_on_tani": "Yapay zeka analiziniz arka planda hazırlanıyor... Raporunuz birazdan burada görünecektir.",
             "durum": "inceliyor",
             "tarih": guncel_tarih_saat  
         }
 
-        supabase.table("analizler").insert(kayit_verisi).execute()
+        inserted = supabase.table("analizler").insert(kayit_verisi).execute()
+        kayit_id = inserted.data[0]["id"] # Oluşan kaydın ID'sini al
 
+        # Arka plan görevini (Background Task) tetikle
+        background_tasks.add_task(arka_planda_analiz_yap, req, kayit_id)
+
+        # Hasta 100 saniye beklemesin diye 1 saniye içinde cevabı yapıştırıyoruz!
         return {
             "status": "success",
-            "supabase_kayit_durumu": "Başarıyla kaydedildi"
+            "supabase_kayit_durumu": "Başarıyla kaydedildi, AI analizi arka planda sürüyor."
         }   
 
     except Exception as e:            
