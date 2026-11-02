@@ -2,6 +2,8 @@ import os
 import io
 import time 
 import base64
+import asyncio
+import urllib.request
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException, BackgroundTasks
@@ -79,6 +81,31 @@ class DegerlendirmeRequest(BaseModel):
     foto1_base64: str
     foto2_base64: Optional[str] = None
     foto3_base64: Optional[str] = None
+
+# ========================================================
+# SUNUCUYU UYANIK TUTAN PING SİSTEMİ (YENİ EKLENEN KISIM)
+# ========================================================
+@app.get("/ping")
+def ping_server():
+    return {"status": "alive", "message": "Sunucu uyanık!"}
+
+@app.on_event("startup")
+async def startup_event():
+    async def keep_awake():
+        while True:
+            await asyncio.sleep(600)  # Her 10 dakikada bir çalışır (600 saniye)
+            try:
+                # Kendi kendini dışarıdan dürterek uyumasını engeller.
+                url = os.getenv("RENDER_URL")
+                if url:
+                    urllib.request.urlopen(url)
+                    print(f"[PING] Sunucu uyanık tutuldu! ({datetime.now()})")
+                else:
+                    print("[PING UYARI] RENDER_URL bulunamadı, ping atılamıyor.")
+            except Exception as e:
+                print(f"[PING HATA] {str(e)}")
+    
+    asyncio.create_task(keep_awake())
 
 # ========================================================
 # ARKA PLANDA ÇALIŞACAK DEV FONKSİYON (HASTAYI BEKLETMEYEN KISIM)
